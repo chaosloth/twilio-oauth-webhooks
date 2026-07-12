@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Claude Code / Superpowers
+.claude/
+.superpowers/
+docs/superpowers/
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Go
+servers/golang/golang-server
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
