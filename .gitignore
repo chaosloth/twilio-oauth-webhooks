@@ -5,6 +5,7 @@
 .claude/
 .superpowers/
 docs/superpowers/
+docs/specs/
 
 # Node
 node_modules/
