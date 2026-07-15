@@ -96,6 +96,7 @@ Or run individual steps:
 **PowerShell:**
 
 ```powershell
+.\scripts\create-setting.ps1      # Create webhook setting
 .\scripts\configure-oauth.ps1     # Attach OAuth config
 .\scripts\test-webhook.ps1        # Test against your server
 .\scripts\create-rule.ps1         # Create a webhook rule

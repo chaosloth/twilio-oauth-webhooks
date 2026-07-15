@@ -183,10 +183,14 @@ WEBHOOK_SETTING_SID=
 
 ### 3. Create a Webhook Setting
 
-Run `scripts/create-setting.sh` to create a webhook setting resource in your Twilio account:
+Run the create-setting script to create a webhook setting resource in your Twilio account:
 
 ```bash
 ./scripts/create-setting.sh
+```
+
+```powershell
+.\scripts\create-setting.ps1
 ```
 
 This script:
