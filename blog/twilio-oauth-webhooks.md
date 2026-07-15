@@ -141,13 +141,19 @@ Copy the Keycloak ngrok URL and use it in place of `http://localhost:8080` in th
 
 Now that you have your OAuth server running and know its URLs, copy `.env.example` to `.env`:
 
+**Bash (Linux/macOS):**
+
 ```bash
 cp .env.example .env
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 Copy-Item .env.example .env
 ```
+
+**Windows (Batch):**
 
 ```bat
 copy .env.example .env
@@ -189,13 +195,19 @@ WEBHOOK_SETTING_SID=
 
 Run the create-setting script to create a webhook setting resource in your Twilio account:
 
+**Bash (Linux/macOS):**
+
 ```bash
 ./scripts/create-setting.sh
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 .\scripts\create-setting.ps1
 ```
+
+**Windows (Batch):**
 
 ```bat
 scripts\create-setting.bat
@@ -223,13 +235,19 @@ curl -X POST https://preview.twilio.com/Webhooks/Settings \
 
 Run the configure-oauth script to attach OAuth credentials to your webhook setting:
 
+**Bash (Linux/macOS):**
+
 ```bash
 ./scripts/configure-oauth.sh
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 .\scripts\configure-oauth.ps1
 ```
+
+**Windows (Batch):**
 
 ```bat
 scripts\configure-oauth.bat
@@ -284,13 +302,19 @@ Make sure your webhook ngrok tunnel is running and `WEBHOOK_URL` in `.env` point
 
 **Then run the test:**
 
+**Bash (Linux/macOS):**
+
 ```bash
 ./scripts/test-webhook.sh
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 .\scripts\test-webhook.ps1
 ```
+
+**Windows (Batch):**
 
 ```bat
 scripts\test-webhook.bat
@@ -313,13 +337,19 @@ If this fails, check:
 
 Webhook Settings are applied to your webhooks via **Webhook Rules**. A rule matches outgoing webhook URLs against a filter pattern and applies your setting to matching requests.
 
+**Bash (Linux/macOS):**
+
 ```bash
 ./scripts/create-rule.sh
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 .\scripts\create-rule.ps1
 ```
+
+**Windows (Batch):**
 
 ```bat
 scripts\create-rule.bat
@@ -327,15 +357,21 @@ scripts\create-rule.bat
 
 By default this creates a catch-all rule (filter `*`, priority `100`, traffic `100%`) that applies your OAuth setting to all webhooks. You can also target specific URLs:
 
+**Bash (Linux/macOS):**
+
 ```bash
 # Apply only to a specific domain
 ./scripts/create-rule.sh 'https://your-webhook.ngrok.app/*' 100 100
 ```
 
+**Windows (PowerShell):**
+
 ```powershell
 # Apply only to a specific domain
 .\scripts\create-rule.ps1 -Filter 'https://your-webhook.ngrok.app/*' -Priority 100 -TrafficPercentage 100
 ```
+
+**Windows (Batch):**
 
 ```bat
 REM Apply only to a specific domain
