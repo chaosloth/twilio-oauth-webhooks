@@ -74,7 +74,7 @@ Before you begin, you'll need:
 
 ## Step-by-Step Setup
 
-This repository provides a complete reference implementation with bash scripts that automate the entire configuration process. Here's how to use them.
+This repository provides a complete reference implementation with bash and PowerShell scripts that automate the entire configuration process. Here's how to use them.
 
 ### 1. Set Up Your OAuth Authorization Server
 
@@ -145,6 +145,10 @@ Now that you have your OAuth server running and know its URLs, copy `.env.exampl
 cp .env.example .env
 ```
 
+```powershell
+Copy-Item .env.example .env
+```
+
 Fill in your credentials. Here's what a complete `.env` looks like with Keycloak via ngrok:
 
 ```bash
@@ -205,10 +209,14 @@ curl -X POST https://preview.twilio.com/Webhooks/Settings \
 
 ### 4. Attach OAuth 2.0 Configuration
 
-Run `scripts/configure-oauth.sh` to attach OAuth credentials to your webhook setting:
+Run the configure-oauth script to attach OAuth credentials to your webhook setting:
 
 ```bash
 ./scripts/configure-oauth.sh
+```
+
+```powershell
+.\scripts\configure-oauth.ps1
 ```
 
 This script:
@@ -264,6 +272,10 @@ Make sure your webhook ngrok tunnel is running and `WEBHOOK_URL` in `.env` point
 ./scripts/test-webhook.sh
 ```
 
+```powershell
+.\scripts\test-webhook.ps1
+```
+
 This invokes the `/Webhooks/Settings/{Sid}/Test` endpoint, which:
 - Fetches an access token from your OAuth server using the configured credentials
 - Sends a test webhook request to your `WEBHOOK_URL` with the token
@@ -285,11 +297,20 @@ Webhook Settings are applied to your webhooks via **Webhook Rules**. A rule matc
 ./scripts/create-rule.sh
 ```
 
+```powershell
+.\scripts\create-rule.ps1
+```
+
 By default this creates a catch-all rule (filter `*`, priority `100`, traffic `100%`) that applies your OAuth setting to all webhooks. You can also target specific URLs:
 
 ```bash
 # Apply only to a specific domain
 ./scripts/create-rule.sh 'https://your-webhook.ngrok.app/*' 100 100
+```
+
+```powershell
+# Apply only to a specific domain
+.\scripts\create-rule.ps1 -Filter 'https://your-webhook.ngrok.app/*' -Priority 100 -TrafficPercentage 100
 ```
 
 The script saves the `WEBHOOK_RULE_SID` to your `.env` for later management.

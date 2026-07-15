@@ -28,6 +28,11 @@ cp .env.example .env
 # Edit .env with your Twilio API key and OAuth server details
 ```
 
+```powershell
+Copy-Item .env.example .env
+# Edit .env with your Twilio API key and OAuth server details
+```
+
 ### 3. Start a webhook server
 
 **TypeScript:**
@@ -79,11 +84,23 @@ Run the full setup interactively:
 
 Or run individual steps:
 
+**Bash:**
+
 ```bash
 ./scripts/create-setting.sh      # Create webhook setting
 ./scripts/configure-oauth.sh     # Attach OAuth config
 ./scripts/test-webhook.sh        # Test against your server
 ./scripts/enable-default.sh      # Enable for all webhooks
+```
+
+**PowerShell:**
+
+```powershell
+.\scripts\configure-oauth.ps1     # Attach OAuth config
+.\scripts\test-webhook.ps1        # Test against your server
+.\scripts\create-rule.ps1         # Create a webhook rule
+.\scripts\delete-rule.ps1         # Delete a webhook rule
+.\scripts\inspect-webhook.ps1     # Inspect incoming webhook headers
 ```
 
 ### 6. Tear down
@@ -96,7 +113,7 @@ Or run individual steps:
 
 ```
 ├── blog/                    Blog post (markdown)
-├── scripts/                 Bash scripts for Twilio API configuration
+├── scripts/                 Bash & PowerShell scripts for Twilio API configuration
 ├── servers/
 │   ├── typescript/          Express + jose webhook server
 │   ├── python/              FastAPI + python-jose webhook server
