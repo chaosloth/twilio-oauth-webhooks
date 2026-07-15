@@ -33,6 +33,11 @@ Copy-Item .env.example .env
 # Edit .env with your Twilio API key and OAuth server details
 ```
 
+```bat
+copy .env.example .env
+REM Edit .env with your Twilio API key and OAuth server details
+```
+
 ### 3. Start a webhook server
 
 **TypeScript:**
@@ -104,6 +109,17 @@ Or run individual steps:
 .\scripts\inspect-webhook.ps1     # Inspect incoming webhook headers
 ```
 
+**CMD (Windows batch with curl):**
+
+```bat
+scripts\create-setting.bat        REM Create webhook setting
+scripts\configure-oauth.bat       REM Attach OAuth config
+scripts\test-webhook.bat          REM Test against your server
+scripts\create-rule.bat           REM Create a webhook rule
+scripts\delete-rule.bat           REM Delete a webhook rule
+scripts\inspect-webhook.bat       REM Inspect incoming webhook headers
+```
+
 ### 6. Tear down
 
 ```bash
@@ -114,7 +130,7 @@ Or run individual steps:
 
 ```
 ├── blog/                    Blog post (markdown)
-├── scripts/                 Bash & PowerShell scripts for Twilio API configuration
+├── scripts/                 Bash, PowerShell & batch scripts for Twilio API configuration
 ├── servers/
 │   ├── typescript/          Express + jose webhook server
 │   ├── python/              FastAPI + python-jose webhook server
