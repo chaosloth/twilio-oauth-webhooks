@@ -169,6 +169,11 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	bodyJSON, _ := json.MarshalIndent(body, "", "  ")
 	log.Printf("Webhook payload: %s", string(bodyJSON))
 
+	// Output X-API-Key if present (e.g., injected by Twilio Function proxy)
+	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
+		log.Printf("--- X-API-Key: %s ---", apiKey)
+	}
+
 	// Validate X-Twilio-Signature
 	twilioSignature := r.Header.Get("X-Twilio-Signature")
 	if authTokenSecret != "" && twilioSignature != "" {

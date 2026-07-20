@@ -65,6 +65,28 @@ go build .
 ./golang-server
 ```
 
+### Optional: Deploy the Twilio Function proxy
+
+If your downstream service requires an `X-API-Key` header (or other custom headers) alongside the OAuth Bearer token, deploy the Twilio Function as a proxy:
+
+```bash
+cd twilio-serverless
+cp .env.example .env
+# Set DOWNSTREAM_URL and DOWNSTREAM_API_KEY
+npm install
+npm run deploy
+```
+
+The function forwards incoming webhooks to your downstream URL, preserving the Bearer token and adding an `X-API-Key` header. Point your Twilio webhook URL at the deployed function instead of your downstream server directly.
+
+You can also override the downstream URL per-request using the `endpoint` query parameter:
+
+```
+https://twilio-serverless-1234.twil.io/webhook?endpoint=https://api.example.com/handler
+```
+
+If `endpoint` is not provided, the function falls back to `DOWNSTREAM_URL` from the environment.
+
 ### 4. Expose with ngrok (two tunnels)
 
 Twilio needs to reach both your OAuth server and webhook server. Run two tunnels:
@@ -135,6 +157,7 @@ scripts\inspect-webhook.bat       REM Inspect incoming webhook headers
 │   ├── typescript/          Express + jose webhook server
 │   ├── python/              FastAPI + python-jose webhook server
 │   └── golang/              net/http + golang-jwt webhook server
+├── twilio-serverless/         Twilio Functions proxy for header manipulation (adds X-API-Key)
 ├── infra/                   Keycloak docker-compose + setup
 └── docs/                    Auth0, Okta, Entra setup guides
 ```

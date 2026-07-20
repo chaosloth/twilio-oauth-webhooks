@@ -87,6 +87,12 @@ app.all("/webhook", validateToken, (req: AuthenticatedRequest, res: Response) =>
   console.log("Token claims:", JSON.stringify(req.token, null, 2));
   console.log("Webhook payload:", JSON.stringify(req.body, null, 2));
 
+  // Output X-API-Key if present (e.g., injected by Twilio Function proxy)
+  const apiKey = req.headers["x-api-key"];
+  if (apiKey) {
+    console.log(`--- X-API-Key: ${apiKey} ---`);
+  }
+
   // Validate X-Twilio-Signature
   const twilioSignature = req.headers["x-twilio-signature"] as string | undefined;
   if (TWILIO_AUTH_TOKEN_SECRET && twilioSignature) {

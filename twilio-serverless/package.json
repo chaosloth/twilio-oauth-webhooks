@@ -1,0 +1,26 @@
+{
+  "name": "twilio-serverless",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Twilio Function that accepts OAuth-protected webhooks and forwards them downstream with an X-API-Key header",
+  "scripts": {
+    "test": "tsc --noEmit",
+    "start": "twilio-run --functions-folder dist/functions --assets-folder dist/assets",
+    "deploy": "twilio-run deploy --functions-folder dist/functions --assets-folder dist/assets",
+    "build": "tsc",
+    "prestart": "npm run build",
+    "predeploy": "npm run build"
+  },
+  "dependencies": {
+    "@twilio-labs/serverless-runtime-types": "^4.0.0",
+    "twilio": "5.0.3",
+    "@twilio/runtime-handler": "2.0.3"
+  },
+  "devDependencies": {
+    "twilio-run": "^4.0.3",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": "18"
+  }
+}

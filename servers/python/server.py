@@ -125,6 +125,11 @@ async def webhook(request: Request, claims: dict = Depends(validate_token)):
     print(f"Token claims: {json.dumps(claims, indent=2)}")
     print(f"Webhook payload: {json.dumps(body, indent=2, default=str)}")
 
+    # Output X-API-Key if present (e.g., injected by Twilio Function proxy)
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        print(f"--- X-API-Key: {api_key} ---")
+
     # Validate X-Twilio-Signature
     twilio_signature = request.headers.get("x-twilio-signature", "")
     if TWILIO_AUTH_TOKEN_SECRET and twilio_signature:
