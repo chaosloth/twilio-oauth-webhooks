@@ -4,6 +4,30 @@ Webhooks are the backbone of real-time communication applications built on Twili
 
 Enter OAuth 2.0 for Twilio webhooks—a Private Beta feature that brings mutual authentication to your webhook endpoints. This guide walks you through everything you need to know to implement it in production.
 
+---
+
+## Table of Contents
+
+- [Webhooks Need Mutual Authentication](#webhooks-need-mutual-authentication)
+- [How It Works: The Client Credentials Flow](#how-it-works-the-client-credentials-flow)
+- [Prerequisites](#prerequisites)
+- [Step-by-Step Setup](#step-by-step-setup)
+  - [1. Set Up Your OAuth Authorization Server](#1-set-up-your-oauth-authorization-server)
+  - [2. Configure Your Environment](#2-configure-your-environment)
+  - [3. Create a Webhook Setting](#3-create-a-webhook-setting)
+  - [4. Attach OAuth 2.0 Configuration](#4-attach-oauth-20-configuration)
+  - [5. Test the Configuration](#5-test-the-configuration)
+  - [6. Create a Webhook Rule](#6-create-a-webhook-rule)
+- [Building the Webhook Server](webhook-server-implementation.md) *(separate doc)*
+- [Optional: Header Manipulation with Twilio Functions](header-manipulation.md) *(separate doc)*
+- [Optional: Pre-Shared Key (PSK) Signature Validation](#optional-pre-shared-key-psk-signature-validation)
+- [Testing End-to-End with Keycloak](#testing-end-to-end-with-keycloak)
+- [Production Considerations](#production-considerations)
+- [FAQ Highlights](#faq-highlights)
+- [Next Steps](#next-steps)
+
+---
+
 ## Webhooks Need Mutual Authentication
 
 Traditionally, Twilio provides webhook signature validation via the `X-Twilio-Signature` header. Your server uses this signature to verify that requests genuinely come from Twilio. This is essential, but it's one-way: your server validates Twilio, but Twilio doesn't authenticate itself to your infrastructure.
@@ -29,10 +53,11 @@ sequenceDiagram
     participant Webhook
     Twilio->>OAuth: Request access token
     OAuth-->>Twilio: JWT access token
-    Twilio->>Webhook: Request with Bearer token
+    Twilio->>Webhook: Request with Bearer token, signature
     Webhook->>OAuth: Fetch JWKS public keys
     OAuth-->>Webhook: Public keys
     Note right of Webhook: Validate JWT
+    Note right of Webhook: Validate signature
     Webhook-->>Twilio: TwiML response
 ```
 
@@ -63,6 +88,32 @@ Before you begin, you'll need:
      - **Account Settings** — Read (required for account-level configuration)
 
    > **We strongly recommend using Restricted API Keys (RAK) over the legacy Auth Token for all Twilio API access.** RAKs are scoped, rotatable, and individually revocable. The Auth Token is a single shared secret with full account access — if it leaks, your entire account is compromised. If the Preview API does not yet appear in the RAK permission list, use a Standard API Key for setup.
+
+   **Alternative: Create an API Key via script**
+
+   Instead of using the Console UI, you can create a Standard API Key programmatically using the included scripts. This requires your Account SID and Auth Token (found in the [Twilio Console](https://console.twilio.com)):
+
+   **Bash (Linux/macOS):**
+
+   ```bash
+   ./scripts/create-api-key.sh
+   ```
+
+   **Windows (PowerShell):**
+
+   ```powershell
+   .\scripts\create-api-key.ps1
+   ```
+
+   **Windows (Batch):**
+
+   ```bat
+   scripts\create-api-key.bat
+   ```
+
+   The script calls `POST https://iam.twilio.com/v1/Keys` with your Account SID and Auth Token, creates a Standard API Key named "Twilio Webhooks API Key", and saves the resulting `TWILIO_API_KEY_SID` and `TWILIO_API_KEY_SECRET` to your `.env` file.
+
+   > **Important:** The API Key secret is only returned once at creation time. The script saves it to `.env`, but store it securely — you cannot retrieve it again from Twilio.
 
 3. **An OAuth 2.0 Authorization Server** that supports the Client Credentials flow and issues JWTs. Options include:
    - **Keycloak** (open-source, self-hosted)—great for local development and testing. See `infra/` in this repository for a Docker Compose setup.
@@ -403,276 +454,164 @@ curl -X POST https://preview.twilio.com/Webhooks/Rules \
 
 ## Building the Webhook Server
 
-Now that Twilio is sending OAuth tokens, your webhook server needs to validate them. Here's a production-ready implementation in TypeScript using Express and the `jose` library.
+Now that Twilio is sending OAuth tokens, your webhook server needs to validate them. This repository includes production-ready implementations in TypeScript, Python, and Go with full JWT validation middleware.
 
-### Why `jose`?
-
-The `jose` library (JavaScript Object Signing and Encryption) is the modern standard for JWT validation in Node.js. It:
-- Automatically fetches and caches public keys from your OAuth server's JWKS endpoint
-- Validates token signatures using the correct algorithm
-- Checks expiration, issuer, and audience claims
-- Handles key rotation seamlessly
-
-Install dependencies:
-
-```bash
-npm install express jose dotenv
-npm install --save-dev @types/express @types/node typescript
-```
-
-### The Middleware Pattern
-
-Here's the complete server from `servers/typescript/src/server.ts`:
-
-```typescript
-import "dotenv/config";
-import express, { Request, Response, NextFunction } from "express";
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
-
-const PORT = parseInt(process.env.WEBHOOK_PORT || "3000", 10);
-const JWKS_URI = process.env.OAUTH_JWKS_URI;
-const ISSUER = process.env.OAUTH_ISSUER;
-
-if (!JWKS_URI) {
-  console.error("OAUTH_JWKS_URI is required in .env");
-  process.exit(1);
-}
-
-const JWKS = createRemoteJWKSet(new URL(JWKS_URI));
-
-interface AuthenticatedRequest extends Request {
-  token?: JWTPayload;
-}
-
-async function validateToken(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Missing or invalid Authorization header" });
-    return;
-  }
-
-  const token = authHeader.slice(7);
-
-  try {
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: ISSUER || undefined,
-    });
-    req.token = payload;
-    next();
-  } catch (err) {
-    console.error("Token validation failed:", err);
-    res.status(401).json({ error: "Invalid token" });
-  }
-}
-
-const app = express();
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-
-app.all("/webhook", validateToken, (req: AuthenticatedRequest, res: Response) => {
-  console.log("--- Webhook received ---");
-  console.log("Token claims:", JSON.stringify(req.token, null, 2));
-  console.log("Webhook payload:", JSON.stringify(req.body, null, 2));
-
-  // Determine if this is a Voice or Messaging webhook
-  const isVoice = req.body.CallSid || req.body.CallStatus;
-
-  if (isVoice) {
-    res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Hello! This webhook is protected by OAuth 2.0.</Say>
-</Response>`);
-  } else {
-    res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>Hello! This webhook is protected by OAuth 2.0.</Message>
-</Response>`);
-  }
-});
-
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok" });
-});
-
-app.listen(PORT, () => {
-  console.log(`Webhook server listening on port ${PORT}`);
-  console.log(`JWKS URI: ${JWKS_URI}`);
-  console.log(`Issuer: ${ISSUER || "(not set)"}`);
-});
-```
-
-### Key Implementation Details
-
-**1. JWKS Initialization**  
-`createRemoteJWKSet(new URL(JWKS_URI))` creates a remote key set that automatically:
-- Fetches public keys from your OAuth server
-- Caches them in memory
-- Refreshes them when needed (e.g., key rotation)
-
-**2. Token Extraction**  
-The middleware extracts the Bearer token from the `Authorization` header. If missing or malformed, it returns 401.
-
-**3. Token Verification**  
-`jwtVerify()` performs cryptographic validation:
-- Verifies the signature using the correct public key from JWKS
-- Checks that `exp` (expiration) hasn't passed
-- Validates the `iss` (issuer) claim matches your expected issuer
-- Optionally validates `aud` (audience) if configured
-
-**4. Attaching Claims**  
-If validation succeeds, the JWT payload (claims) is attached to `req.token` for downstream handlers to inspect (e.g., `sub`, `client_id`, custom claims).
-
-**5. Returning TwiML**  
-Twilio expects an XML response (TwiML) for Voice and Messaging webhooks. The handler detects the webhook type and returns appropriate TwiML.
-
-### Python Implementation
-
-A functionally equivalent FastAPI implementation is provided in `servers/python/server.py` using the `python-jose` library. The pattern is identical:
-- Extract Bearer token from `Authorization` header
-- Fetch JWKS from your OAuth server
-- Verify signature, expiration, and issuer
-- Return TwiML on success, 401 on failure
-
-See the Python server for details.
-
-### Go Implementation
-
-The Go implementation in `servers/golang/main.go` uses [`golang-jwt`](https://github.com/golang-jwt/jwt) for JWT validation with automatic JWKS key fetching.
-
-Key libraries:
-- `github.com/MicahParks/keyfunc/v3` — fetches and caches JWKS keys automatically
-- `github.com/golang-jwt/jwt/v5` — parses and verifies JWTs
-
-The pattern is the same as TypeScript and Python: middleware extracts the Bearer token, validates the JWT signature against JWKS, checks issuer/expiry, and passes claims to the webhook handler.
-
-See the Go server for the complete implementation.
+See **[Building the Webhook Server](webhook-server-implementation.md)** for the complete implementation guide, including:
+- TypeScript/Express middleware with `jose` for JWT validation
+- Key implementation details (JWKS initialization, token extraction, verification)
+- Python (FastAPI) and Go (`golang-jwt`) equivalents
 
 ## Optional: Header Manipulation with Twilio Functions
 
-In some architectures, your downstream webhook server requires additional authentication headers beyond the OAuth Bearer token — for example, an `X-API-Key` header that identifies the calling service. Rather than modifying Twilio's webhook configuration (which only supports OAuth tokens), you can deploy a **Twilio Function** as a lightweight proxy that sits between Twilio and your downstream service.
+If your downstream service requires additional headers (like `X-API-Key`) beyond the OAuth Bearer token, you can deploy a Twilio Function as a lightweight proxy.
 
-This pattern is useful when:
-- Your downstream service requires an API key header for routing or authorization
-- You want to add custom headers without modifying the downstream server's OAuth configuration
-- You need a simple serverless intermediary that doesn't require managing infrastructure
+See **[Header Manipulation with Twilio Functions](header-manipulation.md)** for the complete guide, including:
+- Architecture and sequence diagram
+- Twilio Functions project configuration and deployment
+- Dynamic endpoint override for multi-service routing
 
-### How It Works
+## Optional: Pre-Shared Key (PSK) Signature Validation
+
+In addition to OAuth 2.0, Twilio supports **Pre-Shared Key (PSK) signature validation** as an alternative to using the account auth token for `X-Twilio-Signature` verification. This is a Private Beta feature that lets you rotate signature keys independently of your auth token, with zero downtime.
+
+### How PSK Signature Validation Works
+
+Traditionally, Twilio signs webhook requests using your account auth token. With PSK, you create a dedicated signature key that Twilio uses instead. This gives you:
+
+- **Key rotation without downtime** — create a new key, activate it, then delete the old one
+- **Separation of concerns** — the signature key is independent from your API credentials
+- **Per-domain keys** — use different keys for different webhook destinations via Webhook Rules
+
+```mermaid
+sequenceDiagram
+    participant Twilio
+    participant Webhook
+    Note left of Twilio: Sign with PSK secret
+    Twilio->>Webhook: Request with signature, Key SID header
+    Note right of Webhook: Look up PSK secret by Key SID
+    Note right of Webhook: Validate signature using PSK secret
+    Webhook-->>Twilio: TwiML response
+```
+
+When PSK is enabled:
+- `X-Twilio-Signature` is computed using the Pre-Shared Key secret instead of the auth token
+- `X-Twilio-Signature-Key-Sid` header is included, identifying which key was used
+- If the header is absent, the account auth token was used (legacy behavior)
+
+### Configuring PSK Signature Validation
+
+This repository includes scripts to configure PSK signature validation. The process is:
+
+1. **Create a webhook setting** (if you haven't already from the OAuth setup)
+2. **Create and activate a signature key** on that setting
+3. **Create a webhook rule** to apply the setting to your webhooks
+
+Run the configure-signature script to create a key and activate it:
+
+**Bash (Linux/macOS):**
+
+```bash
+./scripts/configure-signature.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+.\scripts\configure-signature.ps1
+```
+
+**Windows (Batch):**
+
+```bat
+scripts\configure-signature.bat
+```
+
+This script:
+- Creates a new signature key via `POST /Webhooks/Settings/{SID}/SignatureKeys`
+- Activates the key on the webhook setting via `PATCH /Webhooks/Settings/{SID}`
+- Saves `SIGNATURE_KEY_SID` and `SIGNATURE_KEY_SECRET` to your `.env` file
+
+Under the hood:
+
+```bash
+# Step 1: Create a signature key
+curl -X POST "https://preview.twilio.com/Webhooks/Settings/${WEBHOOK_SETTING_SID}/SignatureKeys" \
+  -H 'Content-Type: application/json' \
+  -u "${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}" \
+  -d '{}'
+
+# Step 2: Activate the key
+curl -X PATCH "https://preview.twilio.com/Webhooks/Settings/${WEBHOOK_SETTING_SID}" \
+  -H 'Content-Type: application/json' \
+  -u "${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}" \
+  -d '{
+    "signature": {
+      "type": "shared_key",
+      "shared_key": {
+        "key_sid": "'${SIGNATURE_KEY_SID}'"
+      },
+      "enabled": true
+    }
+  }'
+```
+
+### Validating Signatures with PSK
+
+Signature validation with PSK follows the same algorithm as when using the auth token — the only difference is which secret you use:
+
+1. Check for the `X-Twilio-Signature-Key-Sid` header
+2. If present, use the corresponding PSK secret for validation
+3. If absent, fall back to the account auth token
+
+During migration, your server should support both secrets for zero-downtime key rotation.
+
+### PSK and OAuth Together
+
+PSK signature validation and OAuth 2.0 are **fully compatible and independent**. You can enable both on the same webhook setting for defense-in-depth:
+
+- **OAuth Bearer token** — proves the request came from an authenticated client
+- **PSK X-Twilio-Signature** — proves the payload has not been tampered with, using a rotatable key
 
 ```mermaid
 sequenceDiagram
     participant Twilio
     participant OAuth
-    participant Function
-    participant Downstream
+    participant Webhook
     Twilio->>OAuth: Request access token
     OAuth-->>Twilio: JWT access token
-    Twilio->>Function: Webhook with Bearer token
-    Note right of Function: Validate signature
-    Function->>Downstream: Forward with Bearer and API key
-    Downstream->>OAuth: Fetch JWKS public keys
-    OAuth-->>Downstream: Public keys
-    Note right of Downstream: Validate JWT
-    Downstream-->>Function: Response
-    Function-->>Twilio: Response
+    Note left of Twilio: Sign with PSK secret
+    Twilio->>Webhook: Bearer token, signature, Key SID header
+    Webhook->>OAuth: Fetch JWKS public keys
+    OAuth-->>Webhook: Public keys
+    Note right of Webhook: Validate JWT
+    Note right of Webhook: Validate signature using PSK secret
+    Webhook-->>Twilio: TwiML response
 ```
 
-The Twilio Function:
-1. Receives the incoming webhook from Twilio (including the OAuth Bearer token)
-2. Validates the `X-Twilio-Signature` to confirm the request is from your account
-3. Forwards the entire payload to your downstream service
-4. Adds an `X-API-Key` header from its environment configuration
-5. Preserves the original `Authorization: Bearer <token>` header
-6. Returns the downstream response back to Twilio
+### Key Rotation with Zero Downtime
 
-### Configuration
+To rotate a PSK signature key without dropping webhooks:
 
-The `twilio-serverless/` directory contains a deployable Twilio Functions project (TypeScript). It requires the following environment variables:
+1. Create a new signature key on the same webhook setting (up to 5 keys per setting)
+2. Update your server to accept signatures from both the old and new secrets
+3. Activate the new key via PATCH
+4. Wait for propagation (up to 5 minutes)
+5. Remove the old secret from your server's validation logic
+6. Optionally delete the old key
 
-| Variable | Description |
-|----------|-------------|
-| `ACCOUNT_SID` | Your Twilio Account SID (used for deployment) |
-| `AUTH_TOKEN` | Your Twilio Auth Token (used for signature validation) |
-| `DOWNSTREAM_URL` | Default URL to forward webhook payloads to (used when no `endpoint` parameter is provided) |
-| `DOWNSTREAM_API_KEY` | The API key sent as `X-API-Key` to the downstream service |
+### Testing PSK Configuration
 
-Set up the project:
+Use the `/Test` endpoint to validate your PSK configuration against your server:
 
 ```bash
-cd twilio-serverless
-cp .env.example .env
+curl -X POST "https://preview.twilio.com/Webhooks/Settings/${WEBHOOK_SETTING_SID}/Test" \
+  -H 'Content-Type: application/json' \
+  -u "${TWILIO_API_KEY_SID}:${TWILIO_API_KEY_SECRET}" \
+  -d "{
+    \"method\": \"POST\",
+    \"url\": \"${WEBHOOK_URL}\"
+  }"
 ```
-
-Edit `.env` and fill in your values:
-
-```bash
-ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-AUTH_TOKEN=your_auth_token
-
-DOWNSTREAM_URL=https://your-downstream-service.example.com/webhook
-DOWNSTREAM_API_KEY=your_downstream_api_key
-```
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-### Local Development
-
-```bash
-npm start
-```
-
-The webhook endpoint will be available locally at `http://localhost:3000/webhook`.
-
-### Deployment
-
-Deploy using the provided script from the project root:
-
-```bash
-./scripts/deploy-serverless.sh
-```
-
-Or deploy manually from within the `twilio-serverless/` directory:
-
-```bash
-cd twilio-serverless
-npm run deploy
-```
-
-After deployment, the script outputs your function URL. Point your Twilio webhook URL (or webhook rule filter) at the deployed function URL instead of your downstream server directly.
-
-### Dynamic Endpoint Override
-
-The function accepts an optional `endpoint` query parameter that overrides the `DOWNSTREAM_URL` environment variable. This allows you to route different webhooks to different downstream services using the same deployed function:
-
-```
-https://twilio-serverless-1234.twil.io/webhook?endpoint=https://api.example.com/voice-handler
-```
-
-If the `endpoint` parameter is not provided, the function falls back to the `DOWNSTREAM_URL` configured in the environment. This is useful when:
-- You have multiple downstream services and want a single Twilio Function deployment
-- Different Twilio phone numbers need to route to different backends
-- You want to test against a staging URL without redeploying
-
-### Detecting the API Key in Your Server
-
-All three example webhook servers (TypeScript, Python, Go) will log the `X-API-Key` header if present in the incoming request. This lets you verify the Twilio Function proxy is working correctly:
-
-```
---- Webhook received ---
-Token claims: { ... }
-Webhook payload: { ... }
---- X-API-Key: your_configured_key ---
-```
-
-Your downstream server can use this header for additional authorization checks, routing, or audit logging alongside the OAuth Bearer token validation.
 
 ## Testing End-to-End with Keycloak
 
@@ -825,7 +764,7 @@ OAuth 2.0 does **not** replace `X-Twilio-Signature` validation. Both are sent an
 - **OAuth token** proves the request came from an authenticated client (Twilio)
 - **X-Twilio-Signature** proves the request payload has not been tampered with
 
-You can configure both for additional security. Twilio recommends using at least one of them with HTTPS.
+You can configure both for additional security. Twilio recommends using at least one of them with HTTPS. You can also use **Pre-Shared Key (PSK) signature validation** instead of the account auth token for computing `X-Twilio-Signature` — see the [PSK Signature Validation](#optional-pre-shared-key-psk-signature-validation) section for details.
 
 > **Note:** The `/Test` endpoint does not send the `X-Twilio-Signature` header. Real webhooks (Voice, Messaging) include both the Bearer token and the signature.
 
@@ -887,17 +826,24 @@ No. Tokens are not logged. However, error code **97001** indicates a token fetch
 **Is X-Twilio-Signature still sent when OAuth is enabled?**  
 **Yes.** OAuth and signature validation are independent. Real webhooks include both the Bearer token and the `X-Twilio-Signature` header. You can validate both for defense-in-depth. Note: the `/Test` endpoint does not include the signature header.
 
+**Can I use a Pre-Shared Key instead of the auth token for signature validation?**  
+Yes. Configure a PSK on your webhook setting and Twilio will use it to compute `X-Twilio-Signature` instead of the auth token. The `X-Twilio-Signature-Key-Sid` header identifies which key was used. See the [PSK Signature Validation](#optional-pre-shared-key-psk-signature-validation) section.
+
+**How do I rotate a PSK signature key without downtime?**  
+Create a new key, update your server to validate with both secrets, activate the new key, wait for propagation (up to 5 minutes), then remove the old secret from your server.
+
 ## Next Steps
 
-You now have a complete understanding of how to secure Twilio webhooks with OAuth 2.0. Here's what to do next:
+You now have a complete understanding of how to secure Twilio webhooks with OAuth 2.0 and Pre-Shared Key signature validation. Here's what to do next:
 
 1. **Request Private Beta access** from your Twilio account team if you haven't already.
 2. **Set up a test environment** using the Keycloak Docker Compose setup in this repository.
 3. **Deploy the TypeScript, Python, or Go webhook server** to your infrastructure.
 4. **Choose a production OAuth provider** (Auth0, Okta, or Entra) and follow the setup guide in `docs/`.
 5. **Run the scripts** to create, configure, test, and enable your webhook setting.
-6. **Monitor** token validation success rates and OAuth server health.
-7. **Iterate** on token lifetimes based on your security and performance requirements.
+6. **Optionally enable PSK signature validation** for rotatable signature keys — run `configure-signature.sh` (or `.ps1`/`.bat`).
+7. **Monitor** token validation success rates and OAuth server health.
+8. **Iterate** on token lifetimes and signature key rotation based on your security requirements.
 
 For questions, issues, or feedback, open an issue in this repository or contact your Twilio solutions engineer.
 
