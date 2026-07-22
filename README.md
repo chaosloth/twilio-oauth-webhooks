@@ -21,7 +21,25 @@ docker compose up -d
 - [Okta](docs/okta-setup.md)
 - [Microsoft Entra ID](docs/entra-setup.md)
 
-### 2. Configure your environment
+### 2. Create an API Key
+
+Create a Standard API Key via the [Twilio Console](https://console.twilio.com/us1/account/keys-credentials/api-keys), or use the included script:
+
+```bash
+./scripts/create-api-key.sh
+```
+
+```powershell
+.\scripts\create-api-key.ps1
+```
+
+```bat
+scripts\create-api-key.bat
+```
+
+This calls the Twilio IAM API to create a Standard API Key and saves `TWILIO_API_KEY_SID` and `TWILIO_API_KEY_SECRET` to your `.env` file. Requires `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN_SECRET` to be set.
+
+### 3. Configure your environment
 
 ```bash
 cp .env.example .env
@@ -38,7 +56,7 @@ copy .env.example .env
 REM Edit .env with your Twilio API key and OAuth server details
 ```
 
-### 3. Start a webhook server
+### 4. Start a webhook server
 
 **TypeScript:**
 
@@ -87,7 +105,7 @@ https://twilio-serverless-1234.twil.io/webhook?endpoint=https://api.example.com/
 
 If `endpoint` is not provided, the function falls back to `DOWNSTREAM_URL` from the environment.
 
-### 4. Expose with ngrok (two tunnels)
+### 5. Expose with ngrok (two tunnels)
 
 Twilio needs to reach both your OAuth server and webhook server. Run two tunnels:
 
@@ -101,12 +119,20 @@ ngrok http 3000
 
 Or use an ngrok config to start both at once (`ngrok start --all`). Update `.env` with both ngrok URLs — replace `localhost:8080` in all OAuth URLs, and set `WEBHOOK_URL` to the webhook tunnel.
 
-### 5. Configure Twilio
+### 6. Configure Twilio
 
-Run the full setup interactively:
+Run the full setup interactively (walks you through all steps with prompts):
 
 ```bash
 ./scripts/setup.sh
+```
+
+```powershell
+.\scripts\setup.ps1
+```
+
+```bat
+scripts\setup.bat
 ```
 
 Or run individual steps:
@@ -114,38 +140,72 @@ Or run individual steps:
 **Bash:**
 
 ```bash
-./scripts/create-setting.sh      # Create webhook setting
-./scripts/configure-oauth.sh     # Attach OAuth config
-./scripts/test-webhook.sh        # Test against your server
-./scripts/enable-default.sh      # Enable for all webhooks
+./scripts/create-api-key.sh          # Create API key (alternative to Console)
+./scripts/create-setting.sh          # Create webhook setting
+./scripts/configure-oauth.sh         # Attach OAuth config
+./scripts/configure-signature.sh     # Configure PSK signature validation (optional)
+./scripts/test-webhook.sh            # Test against your server
+./scripts/create-rule.sh             # Create a webhook rule
 ```
 
 **PowerShell:**
 
 ```powershell
-.\scripts\create-setting.ps1      # Create webhook setting
-.\scripts\configure-oauth.ps1     # Attach OAuth config
-.\scripts\test-webhook.ps1        # Test against your server
-.\scripts\create-rule.ps1         # Create a webhook rule
-.\scripts\delete-rule.ps1         # Delete a webhook rule
-.\scripts\inspect-webhook.ps1     # Inspect incoming webhook headers
+.\scripts\create-api-key.ps1          # Create API key (alternative to Console)
+.\scripts\create-setting.ps1          # Create webhook setting
+.\scripts\configure-oauth.ps1         # Attach OAuth config
+.\scripts\configure-signature.ps1     # Configure PSK signature validation (optional)
+.\scripts\test-webhook.ps1            # Test against your server
+.\scripts\create-rule.ps1             # Create a webhook rule
+.\scripts\delete-rule.ps1             # Delete a webhook rule
+.\scripts\inspect-webhook.ps1         # Inspect incoming webhook headers
 ```
 
 **CMD (Windows batch with curl):**
 
 ```bat
-scripts\create-setting.bat        REM Create webhook setting
-scripts\configure-oauth.bat       REM Attach OAuth config
-scripts\test-webhook.bat          REM Test against your server
-scripts\create-rule.bat           REM Create a webhook rule
-scripts\delete-rule.bat           REM Delete a webhook rule
-scripts\inspect-webhook.bat       REM Inspect incoming webhook headers
+scripts\create-api-key.bat            REM Create API key (alternative to Console)
+scripts\create-setting.bat            REM Create webhook setting
+scripts\configure-oauth.bat           REM Attach OAuth config
+scripts\configure-signature.bat       REM Configure PSK signature validation (optional)
+scripts\test-webhook.bat              REM Test against your server
+scripts\create-rule.bat               REM Create a webhook rule
+scripts\delete-rule.bat               REM Delete a webhook rule
+scripts\inspect-webhook.bat           REM Inspect incoming webhook headers
 ```
 
-### 6. Tear down
+### Optional: Configure PSK Signature Validation
+
+Pre-Shared Key (PSK) signature validation lets Twilio sign webhooks with a dedicated key instead of the account auth token. This enables key rotation without downtime.
+
+```bash
+./scripts/configure-signature.sh
+```
+
+```powershell
+.\scripts\configure-signature.ps1
+```
+
+```bat
+scripts\configure-signature.bat
+```
+
+This creates a signature key, activates it on your webhook setting, and saves `SIGNATURE_KEY_SID` and `SIGNATURE_KEY_SECRET` to `.env`. Use the secret to validate `X-Twilio-Signature` on incoming webhooks. The `X-Twilio-Signature-Key-Sid` header identifies which key was used.
+
+### 7. Tear down
+
+Removes the webhook rule, webhook setting, and clears signature key values from `.env`:
 
 ```bash
 ./scripts/teardown.sh
+```
+
+```powershell
+.\scripts\teardown.ps1
+```
+
+```bat
+scripts\teardown.bat
 ```
 
 ## Project Structure
@@ -175,6 +235,7 @@ scripts\inspect-webhook.bat       REM Inspect incoming webhook headers
 - If token fetch fails (server down, invalid credentials), Twilio retries 2x (250ms apart), then drops the webhook
 - After failure, Twilio waits 300 seconds before retrying token fetch
 - OAuth does NOT replace webhook signature validation — continue checking `X-Twilio-Signature`
+- PSK signature validation and OAuth are independent and can be used together
 - Event Streams Webhook Sinks do not support OAuth
 - Compatible with Restricted API Key (RAK) Signature validation
 

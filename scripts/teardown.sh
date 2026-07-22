@@ -26,7 +26,7 @@ else
   echo "No WEBHOOK_RULE_SID set, skipping rule deletion."
 fi
 
-# Step 2: Delete webhook setting
+# Step 2: Delete webhook setting (also removes any signature keys associated with it)
 if [ -n "${WEBHOOK_SETTING_SID:-}" ]; then
   echo "Deleting webhook setting ${WEBHOOK_SETTING_SID}..."
   RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE "https://preview.twilio.com/Webhooks/Settings/${WEBHOOK_SETTING_SID}" \
@@ -41,4 +41,11 @@ else
   echo "No WEBHOOK_SETTING_SID set, skipping setting deletion."
 fi
 
-echo "Teardown complete. OAuth will no longer be applied to webhooks."
+# Step 3: Clear signature key values from .env
+if [ -n "${SIGNATURE_KEY_SID:-}" ]; then
+  sed -i '' "s/^SIGNATURE_KEY_SID=.*/SIGNATURE_KEY_SID=/" "$ENV_FILE"
+  sed -i '' "s/^SIGNATURE_KEY_SECRET=.*/SIGNATURE_KEY_SECRET=/" "$ENV_FILE"
+  echo "Signature key values cleared from .env."
+fi
+
+echo "Teardown complete. OAuth and PSK signature validation will no longer be applied to webhooks."
